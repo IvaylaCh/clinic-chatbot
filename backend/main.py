@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from database import engine, Base
 app=FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,6 +15,10 @@ app.add_middleware(
 def root():
     return{"message":"API works"}
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.get("/test-db")
+def test_db():
+    try:
+        with engine.connect() as conn:
+            return {"database": "connected!"}
+    except Exception as e:
+        return {"database": "failed", "error": str(e)}

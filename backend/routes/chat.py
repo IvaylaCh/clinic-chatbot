@@ -14,30 +14,42 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 router = APIRouter(prefix="/api", tags=["chat"])
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-SYSTEM_PROMPT = """You are a helpful assistant for a medical clinic in Bulgaria.
+today = datetime.now().strftime("%Y-%m-%d")
+weekday_bg = ["Понеделник", "Вторник", "Сряда", "Четвъртък", "Петък", "Събота", "Неделя"]
+today_name = weekday_bg[datetime.now().weekday()]
+
+SYSTEM_PROMPT = f"""You are a helpful assistant for a medical clinic in Bulgaria.
+Today is {today_name}, {today}.
+
 You help patients with:
 1. Booking appointments
 2. Checking appointments by ID
 3. Cancelling appointments
 
 You have access to the following doctors:
-{doctors}
+{{doctors}}
 
-When collecting information to book an appointment, you need:
-- Patient full name
-- Patient phone number
-- Patient EGN (10 digit Bulgarian ID)
-- Doctor choice
-- Preferred date (YYYY-MM-DD)
-- Preferred time slot
+IMPORTANT: Before booking, always check if the doctor works on the requested day based on their schedule provided. If not, suggest the next available day.
+
+When you have collected ALL information needed to book, return intent "book_ready" and include in data:
+{{{{
+    "doctor_id": <number>,
+    "patient_name": "<full name>",
+    "patient_phone": "<phone>",
+    "EGN": "<10 digit EGN>",
+    "start_at": "<YYYY-MM-DD HH:MM>"
+}}}}
+
+When patient wants to check appointment, return intent "check" and data: {{{{"appointment_id": <number>}}}}
+When patient wants to cancel appointment, return intent "cancel" and data: {{{{"appointment_id": <number>}}}}
 
 Always respond in Bulgarian language.
 Always respond ONLY in this JSON format:
-{{
-    "intent": "book" | "check" | "cancel" | "info" | "greeting" | "collect_info",
+{{{{
+    "intent": "book" | "book_ready" | "check" | "cancel" | "info" | "greeting" | "collect_info",
     "message": "Your response to the patient in Bulgarian",
-    "data": {{}}
-}}"""
+    "data": {{{{}}}}
+}}}}"""
 
 class ChatRequest(BaseModel):
     message: str
@@ -48,7 +60,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
     # Get active doctors from database
     doctors = db.query(Doctor).filter(Doctor.is_active == True).all()
     doctors_info = "\n".join([
-        f"- {d.name} ({d.specialty}) at {d.location}, {d.slot_minutes} min slots"
+        f"- {d.name} (ID:{d.id}, {d.specialty}) at {d.location}, {d.slot_minutes} min slots, works on weekdays: {[r.weekday for r in d.availability_rules]}"
         for d in doctors
     ])
 
@@ -61,7 +73,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
     # Call OpenAI
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         max_tokens=1000,
         messages=messages
     )
@@ -70,7 +82,13 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
     # Parse JSON response
     try:
-        ai_data = json.loads(ai_text)
+        # Strip markdown code blocks if present
+        clean_text = ai_text.strip()
+        if clean_text.startswith("```"):
+            clean_text = clean_text.split("```")[1]
+            if clean_text.startswith("json"):
+                clean_text = clean_text[4:]
+        ai_data = json.loads(clean_text.strip())
     except:
         ai_data = {
             "intent": "info",
@@ -78,8 +96,72 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             "data": {}
         }
 
+    intent = ai_data.get("intent")
+    data = ai_data.get("data", {})
+    message = ai_data.get("message", "Съжалявам, не разбрах.")
+
+    # AUTO BOOK when AI has collected all info
+    if intent == "book_ready":
+        try:
+            doctor = db.query(Doctor).filter(Doctor.id == data["doctor_id"]).first()
+            appointment = Appointment(
+                doctor_id=data["doctor_id"],
+                patient_name=data["patient_name"],
+                patient_phone=data["patient_phone"],
+                EGN=data["EGN"],
+                start_at=datetime.strptime(data["start_at"], "%Y-%m-%d %H:%M"),
+                status="BOOKED",
+                created_at=datetime.utcnow()
+            )
+            db.add(appointment)
+            db.commit()
+            db.refresh(appointment)
+            return {
+                "response": f" Часът е запазен успешно при {doctor.name}! Вашият код е #{appointment.id}. Запазете го за проверка.",
+                "intent": "book_confirmed",
+                "appointment_id": appointment.id
+            }
+        except Exception as e:
+            return {
+                "response": "Съжалявам, възникна грешка при запазването. Моля, опитайте отново.",
+                "intent": "error",
+                "data": {}
+            }
+
+    # AUTO CHECK
+    if intent == "check" and "appointment_id" in data:
+        appointment = db.query(Appointment).filter(
+            Appointment.id == data["appointment_id"]
+        ).first()
+        if appointment:
+            return {
+                "response": f"Намерих Вашия час:\n {appointment.patient_name}\n {appointment.doctor.name}\n {appointment.start_at.strftime('%Y-%m-%d %H:%M')}\n Статус: {appointment.status.value}",
+                "intent": "check_result",
+                "data": {}
+            }
+        else:
+            return {
+                "response": f"Не намерих час с код #{data['appointment_id']}.",
+                "intent": "not_found",
+                "data": {}
+            }
+
+    # AUTO CANCEL
+    if intent == "cancel" and "appointment_id" in data:
+        appointment = db.query(Appointment).filter(
+            Appointment.id == data["appointment_id"]
+        ).first()
+        if appointment:
+            appointment.status = "CANCELLED"
+            db.commit()
+            return {
+                "response": f"Часът #{data['appointment_id']} е отказан успешно.",
+                "intent": "cancel_confirmed",
+                "data": {}
+            }
+
     return {
-        "response": ai_data.get("message", "Съжалявам, не разбрах. Моля, опитайте отново."),
-        "intent": ai_data.get("intent", "info"),
-        "data": ai_data.get("data", {})
+        "response": message,
+        "intent": intent,
+        "data": data
     }

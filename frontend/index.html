@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Клиника ДКЦ</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: sans-serif;
+        background: #f8fafc;
+        color: #1e293b;
+      }
+
+      header {
+        background: #1d4ed8;
+        color: white;
+        padding: 16px 40px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      header h1 {
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .hero {
+        padding: 60px 40px;
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
+      }
+
+      .hero h2 {
+        font-size: 32px;
+        color: #1e3a5f;
+        margin-bottom: 16px;
+      }
+
+      .hero p {
+        font-size: 16px;
+        color: #64748b;
+        line-height: 1.7;
+        margin-bottom: 32px;
+      }
+
+      .cards {
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+        flex-wrap: wrap;
+        padding: 0 40px 60px;
+      }
+
+      .card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        width: 220px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        text-align: center;
+      }
+
+      .card .icon {
+        font-size: 32px;
+        margin-bottom: 12px;
+      }
+      .card h3 {
+        font-size: 16px;
+        color: #1e3a5f;
+        margin-bottom: 8px;
+      }
+      .card p {
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Клиника ДКЦ</h1>
+    </header>
+
+    <div class="hero">
+      <h2>Вашето здраве е наш приоритет</h2>
+      <p>
+        Здравейте! Запазете час онлайн или се свържете с нас чрез чат асистента
+        долу вдясно.
+      </p>
+    </div>
+
+    <script src="chatbot.js"></script>
+  </body>
+</html>

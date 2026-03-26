@@ -5,6 +5,13 @@ from models import Doctor, Appointment, AvailabilityRule, AppointmentStatus
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
+class BookAppointmentRequest(BaseModel):
+    doctor_id: int
+    patient_name: str
+    patient_phone: str
+    EGN: str
+    start_at: str  # "YYYY-MM-DD HH:MM"
+
 router= APIRouter(prefix="/api", tags=["appointments"])
 
 #Get all doctors
@@ -71,4 +78,99 @@ def get_slots(doctor_id: int, date: str, db:Session=Depends(get_db)):
         "doctor": doctor.name,
         "date": date,
         "available_slots": free_slots
+    }
+
+
+# POST /api/appointments - book an appointment
+@router.post("/appointments", status_code=201)
+def book_appointment(data: BookAppointmentRequest, db: Session = Depends(get_db)):
+    # Validate doctor exists
+    doctor = db.query(Doctor).filter(Doctor.id == data.doctor_id, Doctor.is_active == True).first()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+
+    # Parse start_at
+    try:
+        start_at = datetime.strptime(data.start_at, "%Y-%m-%d %H:%M")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD HH:MM")
+
+    # Check the slot is available on that weekday
+    weekday = start_at.isoweekday()
+    rule = db.query(AvailabilityRule).filter(
+        AvailabilityRule.doctor_id == data.doctor_id,
+        AvailabilityRule.weekday == weekday
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=400, detail="Doctor does not work on this day")
+
+    # Check slot is not already booked
+    conflict = db.query(Appointment).filter(
+        Appointment.doctor_id == data.doctor_id,
+        Appointment.start_at == start_at,
+        Appointment.status == AppointmentStatus.BOOKED
+    ).first()
+    if conflict:
+        raise HTTPException(status_code=409, detail="This slot is already booked")
+
+    appointment = Appointment(
+        doctor_id=data.doctor_id,
+        patient_name=data.patient_name,
+        patient_phone=data.patient_phone,
+        EGN=data.EGN,
+        start_at=start_at,
+        status=AppointmentStatus.BOOKED,
+        created_at=datetime.utcnow()
+    )
+    db.add(appointment)
+    db.commit()
+    db.refresh(appointment)
+
+    return {
+        "id": appointment.id,
+        "doctor": doctor.name,
+        "patient_name": appointment.patient_name,
+        "start_at": appointment.start_at.strftime("%Y-%m-%d %H:%M"),
+        "status": appointment.status
+    }
+
+
+# GET /api/appointments/{id} - check an appointment
+@router.get("/appointments/{appointment_id}")
+def get_appointment(appointment_id: int, db: Session = Depends(get_db)):
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    return {
+        "id": appointment.id,
+        "doctor": appointment.doctor.name,
+        "patient_name": appointment.patient_name,
+        "patient_phone": appointment.patient_phone,
+        "start_at": appointment.start_at.strftime("%Y-%m-%d %H:%M"),
+        "status": appointment.status,
+        "created_at": appointment.created_at.strftime("%Y-%m-%d %H:%M") if appointment.created_at else None
+    }
+
+
+# POST /api/appointments/{id}/cancel - cancel an appointment
+@router.post("/appointments/{appointment_id}/cancel")
+def cancel_appointment(appointment_id: int, db: Session = Depends(get_db)):
+    appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    if appointment.status == AppointmentStatus.CANCELLED:
+        raise HTTPException(status_code=400, detail="Appointment is already cancelled")
+
+    if appointment.status == AppointmentStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Cannot cancel a completed appointment")
+
+    appointment.status = AppointmentStatus.CANCELLED
+    db.commit()
+
+    return {
+        "id": appointment.id,
+        "status": appointment.status,
+        "message": "Appointment cancelled successfully"
     }

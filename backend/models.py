@@ -4,9 +4,9 @@ from database import Base
 import enum
 
 class AppointmentStatus(str, enum.Enum):
-    ACTIVE = "active"
-    CANCELLED = "cancelled"
-    COMPLETED = "completed"
+    BOOKED = "BOOKED"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
 
 class Doctor(Base):
     __tablename__ = "doctors"
@@ -30,7 +30,7 @@ class Appointment(Base):
     patient_phone = Column(String(20), nullable=False)
     EGN = Column(String(10), nullable=False)
     start_at = Column(DateTime, nullable=False)
-    status = Column(Enum(AppointmentStatus), default=AppointmentStatus.ACTIVE)
+    status = Column(Enum(AppointmentStatus), default=AppointmentStatus.BOOKED)
     created_at = Column(DateTime)
 
     doctor = relationship("Doctor", back_populates="appointments")

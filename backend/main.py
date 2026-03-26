@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base
-app=FastAPI()
+from database  import engine, Base
+from routes.appointments import router as appointments_router
 
+app=FastAPI(title="Clinic Chatbot API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -10,6 +11,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(appointments_router)
 
 @app.get("/")
 def root():

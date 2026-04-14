@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Doctor, Appointment, AvailabilityRule, AppointmentStatus
+from models import Doctor, Appointment, AvailabilityRule, AppointmentStatus, Service
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
 class BookAppointmentRequest(BaseModel):
     doctor_id: int
+    service_id: int
     patient_name: str
     patient_phone: str
-    EGN: str
     start_at: str  # "YYYY-MM-DD HH:MM"
 
 router= APIRouter(prefix="/api", tags=["appointments"])
@@ -29,7 +29,13 @@ def get_doctors(db:Session=Depends(get_db)):
                 for d in doctors
             ]
 
-#get available slots 
+#Get all services
+@router.get("/services")
+def get_services(db: Session = Depends(get_db)):
+    services = db.query(Service).filter(Service.is_active == True).all()
+    return [{"id": s.id, "name": s.name} for s in services]
+
+#get available slots
 @router.get("/doctors/{doctor_id}/slots")
 def get_slots(doctor_id: int, date: str, db:Session=Depends(get_db)):
        
@@ -113,11 +119,15 @@ def book_appointment(data: BookAppointmentRequest, db: Session = Depends(get_db)
     if conflict:
         raise HTTPException(status_code=409, detail="This slot is already booked")
 
+    service = db.query(Service).filter(Service.id == data.service_id, Service.is_active == True).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
     appointment = Appointment(
         doctor_id=data.doctor_id,
+        service_id=data.service_id,
         patient_name=data.patient_name,
         patient_phone=data.patient_phone,
-        EGN=data.EGN,
         start_at=start_at,
         status=AppointmentStatus.BOOKED,
         created_at=datetime.utcnow()
@@ -129,6 +139,7 @@ def book_appointment(data: BookAppointmentRequest, db: Session = Depends(get_db)
     return {
         "id": appointment.id,
         "doctor": doctor.name,
+        "service": service.name,
         "patient_name": appointment.patient_name,
         "start_at": appointment.start_at.strftime("%Y-%m-%d %H:%M"),
         "status": appointment.status

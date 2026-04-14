@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database  import engine, Base
+from database import engine, Base
 from routes.appointments import router as appointments_router
 from routes.chat import router as chat_router
+import models  # noqa: F401
 
+Base.metadata.create_all(bind=engine)
 
 app=FastAPI(title="Clinic Chatbot API")
 

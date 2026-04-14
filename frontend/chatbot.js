@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000/api";
+const API_URL = "https://clinic-chatbot-backend.onrender.com/api";
 let conversationHistory = [];
 let isOpen = false;
 

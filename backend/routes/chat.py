@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from database import get_db
-from models import Doctor, Appointment, AvailabilityRule
+from models import Doctor, Appointment, AvailabilityRule, Service
 from openai import OpenAI
 from datetime import datetime
 import os
@@ -29,14 +29,17 @@ You help patients with:
 You have access to the following doctors:
 {{doctors}}
 
+Available services:
+{{services}}
+
 IMPORTANT: Before booking, always check if the doctor works on the requested day based on their schedule provided. If not, suggest the next available day.
 
 When you have collected ALL information needed to book, return intent "book_ready" and include in data:
 {{{{
     "doctor_id": <number>,
+    "service_id": <number>,
     "patient_name": "<full name>",
     "patient_phone": "<phone>",
-    "EGN": "<10 digit EGN>",
     "start_at": "<YYYY-MM-DD HH:MM>"
 }}}}
 
@@ -64,9 +67,13 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         for d in doctors
     ])
 
+    # Get active services from database
+    services = db.query(Service).filter(Service.is_active == True).all()
+    services_info = "\n".join([f"- {s.name} (ID:{s.id})" for s in services])
+
     # Build messages for OpenAI
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT.format(doctors=doctors_info)}
+        {"role": "system", "content": SYSTEM_PROMPT.format(doctors=doctors_info, services=services_info)}
     ] + request.conversation_history + [
         {"role": "user", "content": request.message}
     ]
@@ -106,9 +113,9 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             doctor = db.query(Doctor).filter(Doctor.id == data["doctor_id"]).first()
             appointment = Appointment(
                 doctor_id=data["doctor_id"],
+                service_id=data["service_id"],
                 patient_name=data["patient_name"],
                 patient_phone=data["patient_phone"],
-                EGN=data["EGN"],
                 start_at=datetime.strptime(data["start_at"], "%Y-%m-%d %H:%M"),
                 status="BOOKED",
                 created_at=datetime.utcnow()
@@ -135,7 +142,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         ).first()
         if appointment:
             return {
-                "response": f"Намерих Вашия час:\n {appointment.patient_name}\n {appointment.doctor.name}\n {appointment.start_at.strftime('%Y-%m-%d %H:%M')}\n Статус: {appointment.status.value}",
+                "response": f"Намерих Вашия час:\n {appointment.patient_name}\n {appointment.doctor.name}\n Услуга: {appointment.service.name}\n {appointment.start_at.strftime('%Y-%m-%d %H:%M')}\n Статус: {appointment.status.value}",
                 "intent": "check_result",
                 "data": {}
             }

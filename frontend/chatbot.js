@@ -1,4 +1,4 @@
-const API_URL = "https://clinic-chatbot-backend.onrender.com/api";
+const API_URL = "https://clinic-chatbot-backend.fly.dev/api";
 let conversationHistory = [];
 let isOpen = false;
 
